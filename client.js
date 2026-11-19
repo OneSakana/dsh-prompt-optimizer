@@ -276,6 +276,7 @@ window.__ModuleLoader__.load({
     }
 
     const defaultModeRef = { current: 'basic' };
+    const SUMMARY_TEXT = '一键优化输入框草稿 · 三种模式 · 自定义模板与模型路由';
 
     // ---------------------------------------------------------------------------
     // Settings page: rendered into the `main` slot (sidebar entry + bundle card),
@@ -596,18 +597,14 @@ window.__ModuleLoader__.load({
           { name: 'main', key: 'prompt-optimizer' },
           PromptOptimizerSettingsPage,
         ));
-        ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register(
-          { name: 'plugins.bundle.config', key: 'dsh-prompt-optimizer' },
+        const seat = (name, key) => ctx.slots.register(
+          { name, key },
           (slotProps) => (slotProps && slotProps.view === 'summary')
-            ? '一键优化输入框草稿 · 三种模式 · 自定义模板与模型路由'
+            ? SUMMARY_TEXT
             : h(SettingsCard, { page: true }),
-        ));
-        ctx.slots.inject('plugins.row.config', () => ctx.slots.register(
-          { name: 'plugins.row.config', key: 'dsh-prompt-optimizer#prompt-optimizer' },
-          (slotProps) => (slotProps && slotProps.view === 'summary')
-            ? '一键优化输入框草稿 · 三种模式 · 自定义模板与模型路由'
-            : h(SettingsCard, { page: true }),
-        ));
+        );
+        ctx.slots.inject('plugins.bundle.config', () => seat('plugins.bundle.config', 'dsh-prompt-optimizer'));
+        ctx.slots.inject('plugins.row.config', () => seat('plugins.row.config', 'dsh-prompt-optimizer#prompt-optimizer'));
       },
     };
   },

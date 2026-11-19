@@ -178,7 +178,7 @@ export const Config = z.object({
   model: z.string().default('').volatile(),
 });
 
-export const inject = ['commands', 'connection', 'settings'];
+export const inject = ['commands', 'settings'];
 
 /** Read the plugin's live settings, merged over the built-in defaults. */
 function readSettings(settings) {
@@ -194,14 +194,9 @@ function readSettings(settings) {
 }
 
 /** Host plugin body: registers routes and the slash command for the plugin lifetime. */
-export function apply(ctx, config) {
-  const connection = Reflect.get(ctx, 'connection');
-  if (connection === undefined || connection.fetch === undefined) return;
-
-  const jsonResponse = (status, payload) => ({ status, payload });
-
+export function apply(ctx) {
   /** Resolve the model route: settings first, then the default selection. */
-  async function resolveRoute(llm, value) {
+  async function resolveRoute(value) {
     const provider = typeof value?.provider === 'string' ? value.provider.trim() : '';
     const model = typeof value?.model === 'string' ? value.model.trim() : '';
     if (value?.followDefaultModel !== false && !(provider !== '' && model !== '')) {
@@ -222,11 +217,11 @@ export function apply(ctx, config) {
   async function optimize(text, mode, llm, value) {
     const template = TEMPLATES[mode] ?? TEMPLATES.basic;
     const strength = STRENGTHS[value?.strength] ?? STRENGTHS.balanced;
-    const route = await resolveRoute(llm, value);
+    const route = await resolveRoute(value);
     const custom = typeof value?.instruction === 'string' && value.instruction.trim() !== '' ? value.instruction.trim() : undefined;
     const system = custom !== undefined
-      ? [custom, '', strength.guidance, OUTPUT_RULES].filter((part) => part !== '').join('\n')
-      : [template.system, '', strength.guidance].filter((part) => part !== '').join('\n');
+      ? [custom, '', strength.guidance, OUTPUT_RULES].join('\n')
+      : [template.system, '', strength.guidance].join('\n');
     let out = '';
     const chunks = llm.stream({
       provider: route.provider,
@@ -250,8 +245,7 @@ export function apply(ctx, config) {
     return out;
   }
 
-  try {
-    ctx.plugin({
+  ctx.plugin({
       name: 'prompt-optimizer:route',
       inject: ['webServer', 'connection', 'llm', 'settings'],
       apply(sctx) {
@@ -291,11 +285,11 @@ export function apply(ctx, config) {
               });
               req.on('error', reject);
               req.on('end', () => {
-                if (tooLarge) return resolve({ error: jsonResponse(413, { error: 'input too large' }) });
+                if (tooLarge) return resolve({ error: { status: 413, payload: { error: 'input too large' } } });
                 try {
                   resolve({ body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') });
                 } catch {
-                  resolve({ error: jsonResponse(400, { error: 'invalid JSON body' }) });
+                  resolve({ error: { status: 400, payload: { error: 'invalid JSON body' } } });
                 }
               });
             });
@@ -318,10 +312,7 @@ export function apply(ctx, config) {
                 }
                 if (req.method === 'POST') {
                   const { body, error } = await readBodyJson(req);
-                  if (error !== undefined) {
-                    const payload = await error;
-                    return send(payload.status, payload.payload);
-                  }
+                  if (error !== undefined) return send(error.status, error.payload);
                   const ops = Array.isArray(body?.ops) ? body.ops : null;
                   if (ops === null) return send(400, { ok: false, code: 'bad-request', message: '缺少 ops 数组' });
                   try {
@@ -329,8 +320,7 @@ export function apply(ctx, config) {
                     const current = readSettings(settings);
                     return send(200, { ok: true, revision: current.revision, value: current.value });
                   } catch (error) {
-                    const code = error?.code ?? (String(error?.constructor?.name ?? '').includes('Conflict') ? 'conflict' : 'error');
-                    if (code === 'SETTINGS_CONFLICT' || code === 'conflict') {
+                    if (error?.code === 'SETTINGS_CONFLICT') {
                       const current = readSettings(settings);
                       return send(409, { ok: false, code: 'conflict', revision: current.revision, value: current.value, message: '设置已被其他页面修改，请重试' });
                     }
@@ -369,10 +359,7 @@ export function apply(ctx, config) {
                 }
                 if (req.method !== 'POST') return send(405, { error: 'method not allowed' });
                 const { body, error } = await readBodyJson(req);
-                if (error !== undefined) {
-                  const payload = await error;
-                  return send(payload.status, payload.payload);
-                }
+                if (error !== undefined) return send(error.status, error.payload);
                 const text = typeof body?.text === 'string' ? body.text.trim() : '';
                 const mode = typeof body?.mode === 'string' ? body.mode : 'basic';
                 if (text === '') return send(400, { error: 'empty draft' });
@@ -392,37 +379,25 @@ export function apply(ctx, config) {
             }
           };
 
-          try {
-            // Exact for the bare optimize/metadata path; prefix for the
-            // /settings and /models subpaths. The two live in separate
-            // tables, so same-path registration is allowed.
-            const registrations = [
-              ['exact', () => webServer.register({ kind: 'exact', path: ROUTE_PATH, handler: nodeHandler })],
-              ['prefix', () => webServer.register({ kind: 'prefix', path: ROUTE_PATH, handler: nodeHandler })],
-            ];
-            const disposers = [];
-            for (const [kind, register] of registrations) {
-              try {
-                disposers.push(register());
-              } catch (error) {
-                // A leftover route from a previous mount keeps serving with a
-                // stale closure — log loudly; a dsh-web restart clears it.
-              }
-            }
-            return () => {
-              for (const dispose of disposers) {
-                try { dispose(); } catch {}
-              }
-            };
-          } catch (error) {
-            return () => {};
+          // Exact for the bare optimize/metadata path; prefix for the
+          // /settings and /models subpaths. The two live in separate
+          // tables, so same-path registration is allowed. Each registration
+          // is isolated so a leftover from a broken earlier mount cannot
+          // block the other (a dsh-web restart clears both).
+          const disposers = [];
+          for (const kind of ['exact', 'prefix']) {
+            try {
+              disposers.push(webServer.register({ kind, path: ROUTE_PATH, handler: nodeHandler }));
+            } catch {}
           }
+          return () => {
+            for (const dispose of disposers) {
+              try { dispose(); } catch {}
+            }
+          };
         }, 'prompt-optimizer: route ' + ROUTE_PATH);
       },
     });
-  } catch (error) {
-    return;
-  }
 
   // Secondary channel: a slash command over the authenticated remote commands
   // registry. The raw input is JSON `{ text, mode }`; the optimized prompt
