@@ -19,6 +19,11 @@ window.__ModuleLoader__.load({
     const API = '/api/prompt-optimizer';
     const MODES = ['basic', 'professional', 'planning'];
     const MODE_LABELS = { basic: '基础优化', professional: '精准优化', planning: '结构化规划' };
+    // 几何常量：显式像素值，不借用主题几何 token（--dsw-radius-* / --dsw-shadow-overlay
+    // 在 Chrome 与 Firefox 中解析结果不同，曾导致圆角/阴影跨浏览器不一致）。
+    const RADIUS_LG = '8px';
+    const RADIUS_XL = '12px';
+    const CARD_SHADOW = '0 8px 28px rgba(0, 0, 0, 0.14)';
     const MODE_HINTS = {
       basic: '消除模糊表达，补充关键信息',
       professional: '细化参数、标准与边界',
@@ -79,13 +84,31 @@ window.__ModuleLoader__.load({
       const style = document.createElement('style');
       style.id = STYLE_ID;
       style.textContent = [
+        // 旋转指示器：标准 + -webkit- 前缀双写
         '@keyframes po-spin{to{transform:rotate(360deg)}}',
-        `.po-spin{display:inline-block;animation:po-spin .9s linear infinite}`,
-        `.po-mode:hover:not(:disabled):not(.po-mode-active){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}`,
-        `.po-quiet:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}`,
-        `.po-primary:hover:not(:disabled){filter:brightness(1.06)}`,
-        `.po-refresh:hover:not(:disabled){color:var(--dsw-alias-label-primary)}`,
-        `.po-area:focus{outline:none;border-color:var(--dsw-alias-state-business-primary,var(--dsw-alias-border-l4))}`,
+        '@-webkit-keyframes po-spin{to{transform:rotate(360deg)}}',
+        '.po-spin{display:inline-block;-webkit-animation:po-spin .9s linear infinite;animation:po-spin .9s linear infinite}',
+        // 文本区滚动条：Firefox 标准属性 + Chromium 私有属性双写
+        '.po-area{scrollbar-width:thin;scrollbar-color:var(--dsw-alias-border-l4) transparent;-webkit-scrollbar-width:thin}',
+        '.po-area::-webkit-scrollbar{width:8px;height:8px}',
+        '.po-area::-webkit-scrollbar-track{background:transparent}',
+        '.po-area::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l4);border-radius:4px}',
+        '.po-area::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-label-secondary)}',
+        // 表单控件外观统一：去除各浏览器原生差异
+        '.po-settings select{-webkit-appearance:none;-moz-appearance:none;appearance:none;padding-right:30px;background-image:url("data:image/svg+xml;utf8,<svg xmlns=%27http://www.w3.org/2000/svg%27 width=%2710%27 height=%276%27><path d=%27M1 1l4 4 4-4%27 stroke=%23888 stroke-width=%271.5%27 fill=%27none%27/></svg>");background-repeat:no-repeat;background-position:right 10px center}',
+        '.po-settings input[type="checkbox"]{-webkit-appearance:none;-moz-appearance:none;appearance:none;width:15px;height:15px;flex:none;margin:0;border:1px solid var(--dsw-alias-border-l4);border-radius:4px;background:var(--dsw-alias-bg-base);cursor:pointer;display:inline-grid;place-content:center}',
+        '.po-settings input[type="checkbox"]::before{content:"";width:9px;height:9px;transform:scale(0);transition:transform .12s ease-in-out;background:var(--dsw-alias-button-primary-label,var(--dsw-alias-state-business-primary,#fff));clip-path:polygon(14% 44%,0 65%,50% 100%,100% 16%,80% 0,43% 62%)}',
+        '.po-settings input[type="checkbox"]:checked{background:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}',
+        '.po-settings input[type="checkbox"]:checked::before{transform:scale(1)}',
+        // 聚焦环统一：替换 Chrome focus ring / Firefox dotted outline 的默认差异
+        '.po-settings select:focus,.po-settings input:focus,.po-settings textarea:focus{outline:none;border-color:var(--dsw-alias-state-business-primary,var(--dsw-alias-border-l4))}',
+        '.po-mode:focus-visible,.po-quiet:focus-visible,.po-primary:focus-visible,.po-refresh:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}',
+        // 交互反馈（保留原有 hover）
+        '.po-mode:hover:not(:disabled):not(.po-mode-active){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}',
+        '.po-quiet:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.12))}',
+        '.po-primary:hover:not(:disabled){filter:brightness(1.06)}',
+        '.po-refresh:hover:not(:disabled){color:var(--dsw-alias-label-primary)}',
+        '.po-area:focus{outline:none}',
       ].join('\n');
       document.head.appendChild(style);
     }
@@ -93,34 +116,34 @@ window.__ModuleLoader__.load({
     const cardStyle = {
       background: 'var(--dsw-alias-bg-base)',
       color: 'var(--dsw-alias-label-primary)',
-      border: '0.5px solid var(--dsw-alias-border-l4)',
-      borderRadius: 'var(--dsw-radius-xl, 12px)',
+      border: '1px solid var(--dsw-alias-border-l4)',
+      borderRadius: RADIUS_XL,
       padding: '0',
       display: 'flex', flexDirection: 'column',
       width: 'var(--dsh-composer-card-max-width, 720px)',
       maxWidth: '100%',
       margin: '0 auto 12px',
-      boxShadow: 'var(--dsw-shadow-overlay, 0 8px 28px rgba(0,0,0,0.14))',
+      boxShadow: CARD_SHADOW,
       overflow: 'hidden',
     };
     const headerStyle = {
       display: 'flex', alignItems: 'center', gap: 10,
       padding: '12px 16px',
       background: 'var(--dsw-alias-bg-subtle, transparent)',
-      borderBottom: '0.5px solid var(--dsw-alias-border-l4)',
+      borderBottom: '1px solid var(--dsw-alias-border-l4)',
     };
     const badgeStyle = {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       width: 24, height: 24, flex: 'none',
-      borderRadius: 'var(--dsw-radius-lg, 8px)',
+      borderRadius: RADIUS_LG,
       background: 'var(--dsw-alias-state-business-primary)',
       color: '#fff', fontSize: 13,
     };
     const titleStyle = { fontSize: 13, fontWeight: 600, lineHeight: '18px' };
     const segmentedStyle = {
       display: 'inline-flex',
-      border: '0.5px solid var(--dsw-alias-border-l4)',
-      borderRadius: 'var(--dsw-radius-lg, 8px)',
+      border: '1px solid var(--dsw-alias-border-l4)',
+      borderRadius: RADIUS_LG,
       overflow: 'hidden',
     };
     const modeButtonStyle = (active) => ({
@@ -133,8 +156,8 @@ window.__ModuleLoader__.load({
     });
     const quietButtonStyle = {
       font: 'inherit', fontSize: 12, cursor: 'pointer',
-      borderRadius: 'var(--dsw-radius-lg, 8px)', padding: '4px 12px',
-      border: '0.5px solid var(--dsw-alias-border-l4)',
+      borderRadius: RADIUS_LG, padding: '4px 12px',
+      border: '1px solid var(--dsw-alias-border-l4)',
       background: 'transparent', color: 'var(--dsw-alias-label-secondary)',
     };
     const iconButtonStyle = {
@@ -159,15 +182,15 @@ window.__ModuleLoader__.load({
     const footerStyle = {
       display: 'flex', alignItems: 'center', gap: 8,
       padding: '10px 16px',
-      borderTop: '0.5px solid var(--dsw-alias-border-l4)',
+      borderTop: '1px solid var(--dsw-alias-border-l4)',
       background: 'var(--dsw-alias-bg-subtle, transparent)',
     };
     const errorStyle = {
       display: 'flex', alignItems: 'center', gap: 8,
       margin: '14px 16px 0',
       padding: '10px 12px',
-      border: '0.5px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l4))',
-      borderRadius: 'var(--dsw-radius-lg, 8px)',
+      border: '1px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l4))',
+      borderRadius: RADIUS_LG,
       background: 'var(--dsw-alias-state-error-bg, transparent)',
       color: 'var(--dsw-alias-state-error-primary)',
       fontSize: 13, lineHeight: '20px',
@@ -296,14 +319,14 @@ window.__ModuleLoader__.load({
     const settingsCardStyle = {
       background: 'var(--dsw-alias-bg-base)',
       color: 'var(--dsw-alias-label-primary)',
-      border: '0.5px solid var(--dsw-alias-border-l4)',
-      borderRadius: 'var(--dsw-radius-xl, 12px)',
+      border: '1px solid var(--dsw-alias-border-l4)',
+      borderRadius: RADIUS_XL,
       padding: '20px 24px',
       display: 'flex', flexDirection: 'column', gap: 18,
       maxWidth: 760,
     };
     const fieldRowStyle = { display: 'flex', flexDirection: 'column', gap: 6 };
-    const sectionDividerStyle = { borderBottom: '0.5px solid var(--dsw-alias-border-l4)', paddingBottom: 18 };
+    const sectionDividerStyle = { borderBottom: '1px solid var(--dsw-alias-border-l4)', paddingBottom: 18 };
     const fieldLabelStyle = { fontSize: 13, fontWeight: 600, lineHeight: '20px' };
     const fieldHintStyle = { fontSize: 12, color: 'var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary))', lineHeight: '18px' };
     const settingsSegmentedStyle = { ...segmentedStyle, alignSelf: 'flex-start', width: 'fit-content' };
@@ -318,8 +341,8 @@ window.__ModuleLoader__.load({
     const settingsInputStyle = {
       font: 'inherit', fontSize: 13,
       padding: '8px 10px',
-      border: '0.5px solid var(--dsw-alias-border-l4)',
-      borderRadius: 'var(--dsw-radius-lg, 8px)',
+      border: '1px solid var(--dsw-alias-border-l4)',
+      borderRadius: RADIUS_LG,
       background: 'var(--dsw-alias-bg-subtle, transparent)',
       color: 'var(--dsw-alias-label-primary)',
       width: '100%', boxSizing: 'border-box',
@@ -360,6 +383,7 @@ window.__ModuleLoader__.load({
         }
       }, []);
 
+      React.useEffect(() => { ensureStyles(); }, []);
       React.useEffect(() => { void load(); }, [load]);
 
       if (loaded === null || draft === null) {
@@ -409,7 +433,7 @@ window.__ModuleLoader__.load({
       const providerOptions = models === null ? [] : models.providers;
       const providerModels = (providerOptions.find((p) => p.id === selectedProvider)?.models) ?? [];
 
-      return h('div', { style: { ...(page ? settingsCardStyle : { ...settingsCardStyle, padding: '14px 16px', gap: 12 }) } }, [
+      return h('div', { className: 'po-settings', style: { ...(page ? settingsCardStyle : { ...settingsCardStyle, padding: '14px 16px', gap: 12 }) } }, [
         page ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
           h('div', { style: { fontSize: 16, fontWeight: 600 } }, '提示词优化 · 设置'),
           h('div', { style: fieldHintStyle }, '配置优化模式、优化强度、自定义模板与模型路由；保存后即时生效。'),
@@ -577,7 +601,7 @@ window.__ModuleLoader__.load({
                 font: 'inherit', fontSize: 12,
                 color: 'var(--dsw-alias-label-secondary)',
                 background: 'transparent', border: 'none', cursor: locked ? 'default' : 'pointer',
-                borderRadius: 'var(--dsw-radius-lg, 8px)', padding: '4px 6px',
+                borderRadius: RADIUS_LG, padding: '4px 6px',
               },
             }, '✦ 优化');
           },
