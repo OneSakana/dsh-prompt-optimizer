@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "提示词优化",
+    "title": "dsh-prompt-optimizer",
     "description": "在输入框添加按钮，一键优化草稿提示词；确认后替换原内容。"
   }
 }

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "title": "Prompt optimizer",
+    "title": "dsh-prompt-optimizer",
     "description": "Adds a composer button that rewrites your draft into a clearer prompt; confirm to replace it."
   }
 }
