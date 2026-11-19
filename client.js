@@ -11,7 +11,7 @@
  * `inputActions.setDraft`.
  */
 window.__ModuleLoader__.load({
-  id: '@local/prompt-optimizer',
+  id: 'dsh-prompt-optimizer',
   factory(require) {
     const React = require('react');
     const h = React.createElement;
