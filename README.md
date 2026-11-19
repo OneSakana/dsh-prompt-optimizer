@@ -4,6 +4,9 @@
 
 一个 [DeepSeek Harness (DSH)](https://www.npmjs.com/package/@deepseek-ai/dsh) 插件：在输入框旁加一颗 **✦ 优化** 按钮，一键把你的提示词草稿改写成更清晰的版本。优化在 Host 侧以一次性模型调用完成——**不进入会话、不消耗会话轮次、不污染聊天记录**。
 
+> [!IMPORTANT]
+> **本插件仅支持 Web UI**（`dsh web`）。桌面端尚未适配。
+
 ![功能截图](screenshot.png)
 
 *图：输入框工具行的「✦ 优化」按钮与优化结果卡片——模式切换、重新优化、采用此结果，一站式完成。*
