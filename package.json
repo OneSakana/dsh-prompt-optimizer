@@ -1,0 +1,41 @@
+{
+  "name": "dsh-prompt-optimizer",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Optimize the composer draft with one click; confirm to replace it.",
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.19.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "index.js",
+    "locale/*.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Y-cone/dsh-prompt-optimizer.git"
+  }
+}

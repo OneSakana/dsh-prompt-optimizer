@@ -1,0 +1,20 @@
+- insert:
+    - id: prompt-optimizer
+      name: 'dsh-prompt-optimizer'
+      config:
+        # Model route used to optimize prompts. Leave both empty to follow the
+        # current default model selection; set them to pin a fixed route.
+        provider: ''
+        model: ''
+        # Optimization template: basic (基础优化) | professional (精准化) | planning (步骤化规划).
+        # The modal can switch modes per run; this is the initial default.
+        template: basic
+        # Instruction appended before the user's draft text.
+        instruction: >-
+          You are a prompt engineer. Rewrite the user's message so it is a
+          clear, specific, well-structured instruction for an AI coding agent:
+          keep every concrete detail (paths, identifiers, ticket numbers,
+          constraints) exactly as written, resolve vague wording, add missing
+          context only when it is safely inferable, and reply with the
+          rewritten prompt text alone — no preamble, no quotes, no
+          explanations. Reply in the same language as the original message.
