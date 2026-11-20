@@ -1,6 +1,6 @@
 {
   "name": "dsh-prompt-optimizer",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "Optimize the composer draft with one click; confirm to replace it.",
   "dependencies": {
@@ -19,7 +19,9 @@
     "cordis.patch.yml",
     "icon.svg",
     "index.js",
-    "locale/*.json"
+    "locale/*.json",
+    "templates.js",
+    "test.mjs"
   ],
   "dsh": {
     "bundle": {
@@ -37,5 +39,8 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/OneSakana/dsh-prompt-optimizer.git"
+  },
+  "scripts": {
+    "test": "node --test test.mjs"
   }
 }

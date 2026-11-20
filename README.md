@@ -59,6 +59,12 @@ dsh plugin --profile <profile> remove dsh-prompt-optimizer
 
 卸载后,重启 DSH 服务后刷新页面
 
+## 🧪 测试
+
+```bash
+npm test        # 即 node --test test.mjs(纯函数回归:输出清洗/设置合并/模板完整性)
+```
+
 ## 🚀 使用
 
 1. 在输入框写下草稿；

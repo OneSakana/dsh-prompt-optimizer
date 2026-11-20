@@ -32,7 +32,7 @@ window.__ModuleLoader__.load({
 
     /** Shared store so the button (input.right) and card (input.dock) stay in sync. */
     const store = {
-      state: null, // null | { sessionId, phase: 'loading'|'done'|'error', mode, original, optimized, error }
+      state: null, // null | { sessionId, seq, phase: 'loading'|'done'|'error', mode, original, optimized, route, error, showHistory }
       listeners: new Set(),
       set(next) { this.state = next; for (const fn of this.listeners) fn(); },
       subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); },
@@ -43,38 +43,65 @@ window.__ModuleLoader__.load({
       return store.state;
     }
 
-    /** Call the Host side-channel route once. */
-    async function optimize(mode, original) {
+    /** 请求句柄:同一时刻只允许一个进行中的优化,新请求自动取消旧请求。 */
+    let inflight = null; // { controller, sessionId, seq, timedOut }
+    let runSeq = 0;
+
+    /** 调用 Host 优化路由;signal 可取消(关闭卡片/重新发起/超时)。返回 { optimized, route }。 */
+    async function optimize(mode, original, { signal } = {}) {
       const response = await fetch(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: original, mode }),
+        signal,
       });
       let payload = null;
       try { payload = await response.json(); } catch {}
       if (!response.ok || payload?.optimized === undefined) {
-        throw new Error(payload?.error ?? `服务返回异常（HTTP ${response.status}）`);
+        throw new Error(payload?.error ?? `服务请求失败(HTTP ${response.status})`);
       }
-      return payload.optimized;
+      return { optimized: payload.optimized, route: payload.route ?? null };
     }
 
-    /** Kick off one optimization run for the current card state. */
+    /** 发起一次优化:取消在途请求 → loading 态 → 完成后一次性展示结果。 */
     function runOptimization(sessionId, mode, original) {
-      store.set({ sessionId, phase: 'loading', mode, original, optimized: null, error: null });
-      optimize(mode, original).then(
-        (optimized) => {
-          const current = store.state;
-          if (current !== null && current.sessionId === sessionId) {
-            store.set({ ...current, phase: 'done', optimized, error: null });
-          }
+      if (inflight !== null) inflight.controller.abort();
+      const seq = ++runSeq;
+      const controller = new AbortController();
+      const rec = { controller, sessionId, seq, timedOut: false };
+      inflight = rec;
+      store.set({ sessionId, seq, phase: 'loading', mode, original, optimized: '', route: null, error: null, showHistory: false });
+      const timer = setTimeout(() => { rec.timedOut = true; controller.abort(); }, 120000);
+      const settle = (patch) => {
+        clearTimeout(timer);
+        if (inflight === rec) inflight = null;
+        const cur = store.state;
+        if (cur !== null && cur.seq === seq) store.set({ ...cur, ...patch, showHistory: false });
+      };
+      optimize(mode, original, { signal: controller.signal }).then(
+        ({ optimized, route }) => {
+          pushHistory({ original, optimized, mode, strength: null, time: 0 });
+          settle({ phase: 'done', optimized, route, error: null });
         },
         (error) => {
-          const current = store.state;
-          if (current !== null && current.sessionId === sessionId) {
-            store.set({ ...current, phase: 'error', optimized: null, error: error instanceof Error ? error.message : String(error) });
-          }
+          const aborted = error?.name === 'AbortError';
+          if (aborted && rec.timedOut) settle({ phase: 'error', optimized: null, error: '优化超时(120 秒),请稍后重试或降低强度' });
+          else if (aborted) return; // 主动取消(关闭卡片/发起新请求),静默
+          settle({ phase: 'error', optimized: null, error: error instanceof Error ? error.message : String(error) });
         },
       );
+    }
+
+    /** 关闭卡片时中止在途请求。 */
+    function closeCard() {
+      if (inflight !== null) inflight.controller.abort();
+      store.set(null);
+    }
+
+    /** 关闭卡片时中止在途请求。 */
+    function closeCard() {
+      if (inflight !== null) inflight.controller.abort();
+      store.set(null);
     }
 
     /** One-off style sheet for the card's keyframes and hover states. */
@@ -114,7 +141,36 @@ window.__ModuleLoader__.load({
         '.po-primary:disabled,.po-quiet:disabled,.po-refresh:disabled,.po-mode:disabled,.icon-disabled{opacity:.5;cursor:default}',
         '.po-mode:hover:disabled{background:transparent}',
         '.po-card{position:relative}',
-        '.po-card::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--dsw-alias-state-business-primary),transparent 70%)}',
+        // 历史面板:滚动/悬停/选中态(与卡片滚动条、交互风格同源)
+        // ---- 历史面板:消息流式布局(头栏 + 滚动列表 + 网格化条目) ----
+        '.po-history-wrap{display:flex;flex-direction:column;gap:10px;min-width:0}',
+        '.po-history{display:flex;flex-direction:column;gap:10px;max-height:340px;overflow-y:auto;padding:2px 4px 2px 2px;margin:-2px -4px -2px -2px;scrollbar-width:thin;scrollbar-color:var(--dsw-alias-border-l4) transparent;overscroll-behavior:contain}',
+        '.po-history::-webkit-scrollbar{width:8px}',
+        '.po-history::-webkit-scrollbar-track{background:transparent}',
+        '.po-history::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l4);border-radius:999px}',
+        '.po-history::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-label-secondary)}',
+        '.po-history-item{border:1px solid var(--dsw-alias-border-l4);border-left:3px solid transparent;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:10px;background:var(--dsw-alias-bg-base);min-width:0;transition:background .12s ease,border-color .12s ease,box-shadow .12s ease}',
+        '.po-history-item:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.06));border-color:var(--dsw-alias-border-l3);box-shadow:0 1px 2px rgba(0,0,0,.04)}',
+        '.po-history-item:focus-within{border-color:var(--dsw-alias-border-l3)}',
+        '.po-history-item.sel{border-left-color:var(--dsw-alias-state-business-primary);background:var(--dsw-alias-interactive-bg-selected-soft,rgba(59,130,246,.07))}',
+        '.po-history-item.sel:hover{background:var(--dsw-alias-interactive-bg-selected-soft,rgba(59,130,246,.10))}',
+        '.po-history-item .meta{display:flex;align-items:center;gap:8px;min-width:0}',
+        '.po-history-item .chip{flex:none;font-size:11px;line-height:18px;padding:0 7px;border-radius:999px;background:rgba(127,127,127,.12);color:var(--dsw-alias-label-secondary)}',
+        '.po-history-item.sel .chip{background:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-button-primary-label,#fff)}',
+        '.po-history-item .tm{margin-left:auto;flex:none;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}',
+        '.po-history-item .blk{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;align-items:start}',
+        '.po-history-item .lab{font-size:11px;line-height:20px;color:var(--dsw-alias-label-secondary);text-align:right;white-space:nowrap}',
+        '.po-history-item .txt{font-size:12.5px;line-height:20px;color:var(--dsw-alias-label-secondary);min-width:0;overflow-wrap:anywhere}',
+        '.po-history-item .txt.line1{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+        '.po-history-item .txt.clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}',
+        '.po-history-item .blk.new .lab{color:var(--dsw-alias-state-business-primary);font-weight:600}',
+        '.po-history-item .blk.new .txt{font-size:13px;color:var(--dsw-alias-label-primary)}',
+        '.po-history-item .ops{display:flex;justify-content:flex-end;gap:8px;padding-top:2px;border-top:1px dashed var(--dsw-alias-border-l4);opacity:.85;transition:opacity .12s ease}',
+        '.po-history-item:hover .ops,.po-history-item:focus-within .ops,.po-history-item.sel .ops{opacity:1}',
+        '.po-history-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:140px;padding:20px 16px;border:1px dashed var(--dsw-alias-border-l4);border-radius:10px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-subtle,transparent);text-align:center}',
+        '.po-history-empty .t{font-size:13px;color:var(--dsw-alias-label-primary);font-weight:500}',
+        '.po-history-empty .h{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);max-width:320px}',
+        '.po-history-empty svg{width:22px;height:22px;opacity:.5}',        '.po-card::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--dsw-alias-state-business-primary),transparent 70%)}',
       ].join('\n');
       document.head.appendChild(style);
     }
@@ -212,6 +268,7 @@ window.__ModuleLoader__.load({
       React.useEffect(() => { ensureStyles(); }, []);
       if (!active || state === null) return null;
       const loading = state.phase === 'loading';
+      const busy = loading;
       const done = state.phase === 'done';
 
       const retry = () => runOptimization(state.sessionId, state.mode, state.original);
@@ -230,30 +287,92 @@ window.__ModuleLoader__.load({
               disabled: loading,
               title: MODE_HINTS[mode],
               style: modeButtonStyle(state.mode === mode),
-              onClick: () => { if (mode !== state.mode) runOptimization(state.sessionId, mode, state.original); },
+              onClick: () => { if (!busy && mode !== state.mode) runOptimization(state.sessionId, mode, state.original); },
             }, MODE_LABELS[mode])),
           ),
           h('button', {
             className: 'po-refresh',
             style: iconButtonStyle,
-            disabled: loading,
+            disabled: busy,
             title: '基于当前原文重新优化',
             'aria-label': '重新优化',
             onClick: retry,
-          }, loading
+          }, busy
             ? h('span', { className: 'po-spin', style: { display: 'inline-block' } }, '◌')
             : '↻'),
           h('button', {
+            className: 'po-quiet', style: iconButtonStyle,
+            onClick: () => store.set({ ...state, showHistory: !state.showHistory }),
+            title: '优化历史(最近 5 条)',
+            'aria-label': '优化历史',
+          }, h('svg', {
+            width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true,
+            style: { display: 'block' },
+          }, [
+            h('circle', { cx: 12, cy: 12, r: 8.5, stroke: 'currentColor', strokeWidth: 1.6 }),
+            h('path', { d: 'M12 7v5l3.2 2', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round' }),
+          ])),
+          h('button', {
             className: 'po-quiet',
             style: iconButtonStyle,
-            onClick: () => store.set(null),
+            onClick: closeCard,
             title: '关闭',
             'aria-label': '关闭',
           }, '✕'),
         ]),
       ];
 
-      if (loading) {
+      if (state.showHistory) {
+        const list = loadHistory();
+        const selected = state.phase === 'done' ? state.optimized : null;
+        children.push(h('div', { style: bodyStyle }, [
+          h('div', { className: 'po-history-wrap' }, [
+            list.length === 0
+              ? h('div', { className: 'po-history-empty' }, [
+                  h('svg', {
+                    viewBox: '0 0 24 24', fill: 'none', 'aria-hidden': true,
+                  }, [
+                    h('circle', { cx: 12, cy: 12, r: 8.5, stroke: 'currentColor', strokeWidth: 1.5 }),
+                    h('path', { d: 'M12 7.5v5l3 2', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' }),
+                  ]),
+                  h('span', { className: 't' }, '还没有优化记录'),
+                  h('span', { className: 'h' }, '完成一次优化后会保留最近 5 条,可随时回看、回填或再次采用。'),
+                ])
+              : h('div', { className: 'po-history' },
+                  list.map((item, i) => h('div', {
+                    key: i,
+                    className: 'po-history-item' + (selected !== null && item.optimized === selected ? ' sel' : ''),
+                  }, [
+                    // 元信息行:模式胶囊 + 时间
+                    h('div', { className: 'meta' }, [
+                      h('span', { className: 'chip' }, MODE_LABELS[item.mode] ?? item.mode),
+                      h('span', { className: 'tm' }, new Date(item.time).toLocaleString()),
+                    ]),
+                    // 原文:单行截断,悬浮显示全文
+                    h('div', { className: 'blk' }, [
+                      h('span', { className: 'lab' }, '原文'),
+                      h('span', { className: 'txt line1', title: item.original }, item.original),
+                    ]),
+                    // 结果:两行截断
+                    h('div', { className: 'blk new' }, [
+                      h('span', { className: 'lab' }, '结果'),
+                      h('span', { className: 'txt clamp2', title: item.optimized }, item.optimized),
+                    ]),
+                    // 操作区
+                    h('div', { className: 'ops' }, [
+                      h('button', {
+                        className: 'po-quiet', style: quietButtonStyle,
+                        onClick: () => store.set({ ...state, showHistory: false, phase: 'done', optimized: item.optimized, original: item.original, mode: item.mode, error: null }),
+                      }, '查看结果'),
+                      h('button', {
+                        className: 'po-primary', style: primaryButtonStyle,
+                        onClick: () => { props.inputActions.setDraft(item.optimized); store.set(null); },
+                      }, '采用'),
+                    ]),
+                  ]))),
+          ]),
+        ]));
+      } else if (loading) {
         children.push(h('div', { style: bodyStyle }, [
           h('div', { style: { ...areaStyle, display: 'flex', alignItems: 'center', gap: 10, color: 'var(--dsw-alias-label-secondary)', minHeight: 90 } },
             h('span', { className: 'po-spin', style: { display: 'inline-block', flex: 'none' } }, '◌'),
@@ -285,23 +404,30 @@ window.__ModuleLoader__.load({
 
       // Footer actions.
       children.push(h('div', { style: footerStyle }, [
-        h('span', { style: { flex: 1 } }),
+        h('span', { style: { flex: 1, fontSize: 11, color: 'var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary))' } },
+          state.phase === 'done' && state.route ? `模型:${state.route.provider} / ${state.route.model}` : ''),
         h('button', {
           className: 'po-quiet',
           style: quietButtonStyle,
-          onClick: () => store.set(null),
+          onClick: closeCard,
         }, '取消'),
-        h('button', {
-          className: 'po-primary',
-          style: primaryButtonStyle,
-          disabled: !done,
-          onClick: () => {
-            const area = optimizedRef.current;
-            const next = area !== null && area.value.trim() !== '' ? area.value.trim() : state.optimized;
-            props.inputActions.setDraft(next);
-            store.set(null);
-          },
-        }, '采用此结果'),
+        state.showHistory
+          ? h('button', {
+              className: 'po-primary',
+              style: primaryButtonStyle,
+              onClick: () => store.set({ ...state, showHistory: false }),
+            }, '返回结果')
+          : h('button', {
+              className: 'po-primary',
+              style: primaryButtonStyle,
+              disabled: !done,
+              onClick: () => {
+                const area = optimizedRef.current;
+                const next = area !== null && area.value.trim() !== '' ? area.value.trim() : state.optimized;
+                props.inputActions.setDraft(next);
+                store.set(null);
+              },
+            }, '采用此结果'),
       ]));
 
       return h('div', { className: 'po-card', style: cardStyle, role: 'region', 'aria-label': '提示词优化' }, children);
@@ -309,6 +435,21 @@ window.__ModuleLoader__.load({
 
     const defaultModeRef = { current: 'basic' };
     const SUMMARY_TEXT = '一键优化输入框草稿 · 三种模式 · 自定义模板与模型路由';
+
+    // ---- 优化历史:localStorage 保留最近 5 条(原文/结果/模式/强度/时间) ----
+    const HISTORY_KEY = 'po-optimization-history';
+    const HISTORY_MAX = 5;
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) ?? []; } catch { return []; }
+    }
+    function saveHistory(list) {
+      try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); } catch {}
+    }
+    function pushHistory(entry) {
+      const list = loadHistory();
+      list.unshift({ ...entry, time: Date.now() });
+      saveHistory(list);
+    }
 
     // ---------------------------------------------------------------------------
     // Settings page: rendered into the `main` slot (sidebar entry + bundle card),
@@ -438,6 +579,34 @@ window.__ModuleLoader__.load({
         setStatus(dirty ? { tone: 'info', text: '已放弃未保存的修改。' } : null);
       };
 
+      const DEFAULTS = { template: 'basic', strength: 'balanced', instruction: '', followDefaultModel: true, provider: '', model: '' };
+      const restoreDefaults = async () => {
+        if (!window.confirm('确认恢复全部设置为默认值?当前自定义内容将被覆盖。')) return;
+        setSaving(true);
+        setStatus({ tone: 'info', text: '正在恢复默认…' });
+        const ops = Object.keys(DEFAULTS).map((key) => ({ op: 'set', path: [key], value: DEFAULTS[key] }));
+        try {
+          const response = await fetch(API + '/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ops, expectedRevision: loaded.revision }),
+          });
+          const payload = await response.json();
+          if (response.ok && payload?.ok === true) {
+            setLoaded({ revision: payload.revision, value: payload.value });
+            setDraft(payload.value);
+            setStatus({ tone: 'success', text: '已恢复默认设置。' });
+            defaultModeRef.current = 'basic';
+          } else {
+            setStatus({ tone: 'error', text: '恢复默认失败:' + (payload?.message ?? `HTTP ${response.status}`) });
+          }
+        } catch (error) {
+          setStatus({ tone: 'error', text: '恢复默认失败:' + (error instanceof Error ? error.message : String(error)) });
+        } finally {
+          setSaving(false);
+        }
+      };
+
       const selectedProvider = typeof draft.provider === 'string' && draft.provider !== '' ? draft.provider : (models?.defaultSelection?.provider ?? '');
       const providerOptions = models === null ? [] : models.providers;
       const providerModels = (providerOptions.find((p) => p.id === selectedProvider)?.models) ?? [];
@@ -553,6 +722,11 @@ window.__ModuleLoader__.load({
             onClick: cancel,
           }, '取消'),
           h('button', {
+            className: 'po-quiet', style: quietButtonStyle,
+            disabled: saving,
+            onClick: restoreDefaults,
+          }, '恢复默认'),
+          h('button', {
             className: 'po-primary', style: primaryButtonStyle,
             disabled: saving || !dirty,
             onClick: save,
@@ -591,6 +765,8 @@ window.__ModuleLoader__.load({
             const state = useStore();
             const locked = busyPhase !== 'plain';
             const cardOpen = state !== null;
+            const draftLen = draft.trim().length;
+            const nearCap = draftLen > 18000; // 上限 20000,90% 起预警
 
             function onClick() {
               const original = draft.trim();
@@ -601,14 +777,14 @@ window.__ModuleLoader__.load({
 
             return h('button', {
               type: 'button',
-              title: '一键优化提示词',
+              title: `一键优化提示词(草稿 ${draftLen} 字 / 上限 20000)`,
               'aria-label': '一键优化提示词',
               disabled: locked,
               onClick: onClick,
               style: {
                 display: 'inline-flex', alignItems: 'center', gap: 4,
                 font: 'inherit', fontSize: 12,
-                color: 'var(--dsw-alias-label-secondary)',
+                color: nearCap ? 'var(--dsw-alias-state-error-primary)' : 'var(--dsw-alias-label-secondary)',
                 background: 'transparent', border: 'none', cursor: locked ? 'default' : 'pointer',
                 borderRadius: RADIUS_LG, padding: '4px 6px',
               },
