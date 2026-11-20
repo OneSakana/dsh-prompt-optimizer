@@ -23,7 +23,7 @@ window.__ModuleLoader__.load({
     // 在 Chrome 与 Firefox 中解析结果不同，曾导致圆角/阴影跨浏览器不一致）。
     const RADIUS_LG = '8px';
     const RADIUS_XL = '12px';
-    const CARD_SHADOW = '0 8px 28px rgba(0, 0, 0, 0.14)';
+    const CARD_SHADOW = '0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06)';
     const MODE_HINTS = {
       basic: '消除模糊表达，补充关键信息',
       professional: '细化参数、标准与边界',
@@ -109,6 +109,12 @@ window.__ModuleLoader__.load({
         '.po-primary:hover:not(:disabled){filter:brightness(1.06)}',
         '.po-refresh:hover:not(:disabled){color:var(--dsw-alias-label-primary)}',
         '.po-area:focus{outline:none}',
+        // 方案 A 标志性装饰:卡片顶部 2px 品牌渐变发丝线
+        // 禁用态:半透明弱化,与方案一致
+        '.po-primary:disabled,.po-quiet:disabled,.po-refresh:disabled,.po-mode:disabled,.icon-disabled{opacity:.5;cursor:default}',
+        '.po-mode:hover:disabled{background:transparent}',
+        '.po-card{position:relative}',
+        '.po-card::before{content:"";position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--dsw-alias-state-business-primary),transparent 70%)}',
       ].join('\n');
       document.head.appendChild(style);
     }
@@ -152,7 +158,7 @@ window.__ModuleLoader__.load({
       border: 'none',
       cursor: 'pointer',
       background: active ? 'var(--dsw-alias-interactive-bg-selected, var(--dsw-alias-state-business-primary))' : 'transparent',
-      color: active ? 'var(--dsw-alias-button-primary-label, var(--dsw-alias-label-primary))' : 'var(--dsw-alias-label-secondary)',
+      color: active ? 'var(--dsw-alias-button-primary-label, #fff)' : 'var(--dsw-alias-label-secondary)',
     });
     const quietButtonStyle = {
       font: 'inherit', fontSize: 12, cursor: 'pointer',
@@ -257,7 +263,10 @@ window.__ModuleLoader__.load({
         children.push(h('div', { style: bodyStyle }, [
           h('div', { style: errorStyle, role: 'alert' }, [
             h('span', { style: { flex: 1 } }, `优化失败：${state.error}`),
-            h('button', { className: 'po-quiet', style: quietButtonStyle, onClick: retry }, '重试'),
+            h('button', {
+              className: 'po-quiet', onClick: retry,
+              style: { ...quietButtonStyle, border: '1px solid var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)', background: 'transparent' },
+            }, '重试'),
           ]),
           h('div', { style: { ...areaStyle, ...paddedStyle, color: 'var(--dsw-alias-label-secondary)', minHeight: 70 } }, state.original),
         ]));
@@ -295,7 +304,7 @@ window.__ModuleLoader__.load({
         }, '采用此结果'),
       ]));
 
-      return h('div', { style: cardStyle, role: 'region', 'aria-label': '提示词优化' }, children);
+      return h('div', { className: 'po-card', style: cardStyle, role: 'region', 'aria-label': '提示词优化' }, children);
     }
 
     const defaultModeRef = { current: 'basic' };
@@ -336,7 +345,7 @@ window.__ModuleLoader__.load({
       border: 'none',
       cursor: 'pointer',
       background: active ? 'var(--dsw-alias-interactive-bg-selected, var(--dsw-alias-state-business-primary))' : 'transparent',
-      color: active ? 'var(--dsw-alias-button-primary-label, var(--dsw-alias-label-primary))' : 'var(--dsw-alias-label-secondary)',
+      color: active ? 'var(--dsw-alias-button-primary-label, #fff)' : 'var(--dsw-alias-label-secondary)',
     });
     const settingsInputStyle = {
       font: 'inherit', fontSize: 13,
@@ -433,7 +442,7 @@ window.__ModuleLoader__.load({
       const providerOptions = models === null ? [] : models.providers;
       const providerModels = (providerOptions.find((p) => p.id === selectedProvider)?.models) ?? [];
 
-      return h('div', { className: 'po-settings', style: { ...(page ? settingsCardStyle : { ...settingsCardStyle, padding: '14px 16px', gap: 12 }) } }, [
+      return h('div', { className: 'po-settings po-card', style: { ...(page ? settingsCardStyle : { ...settingsCardStyle, padding: '14px 16px', gap: 12 }) } }, [
         page ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
           h('div', { style: { fontSize: 16, fontWeight: 600 } }, '提示词优化 · 设置'),
           h('div', { style: fieldHintStyle }, '配置优化模式、优化强度、自定义模板与模型路由；保存后即时生效。'),
