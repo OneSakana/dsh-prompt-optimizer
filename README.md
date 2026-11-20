@@ -23,7 +23,7 @@
 
 
 ```bash
-git clone https://github.com/Y-cone/dsh-prompt-optimizer.git
+git clone https://github.com/OneSakana/dsh-prompt-optimizer.git
 cd dsh-prompt-optimizer && pnpm install
 ```
 
@@ -41,7 +41,23 @@ dsh plugin --profile <profile> add "$(pwd)"
 
 在 DSH 对话里说一句“把 <本目录绝对路径> 安装为插件”，助手会调用 `install_bundle` 完成安装并热加载（热加载无需重启）。
 
-刷新页面即可使用。卸载：`dsh plugin --profile <profile> remove dsh-prompt-optimizer`（或在对话中让助手移除）。
+刷新页面即可使用。
+
+## 🗑️ 卸载
+
+与安装方式对应，任选其一：
+
+**方式 A · 终端**
+
+```bash
+dsh plugin --profile <profile> remove dsh-prompt-optimizer
+```
+
+**方式 B · 对话式**
+
+在 DSH 对话里说一句“卸载 dsh-prompt-optimizer 插件”，助手会调用 `remove_bundle` 完成卸载。
+
+卸载后,重启 DSH 服务后刷新页面
 
 ## 🚀 使用
 
